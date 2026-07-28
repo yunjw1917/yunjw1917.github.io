@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동아리 관리자 - 메인</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card" id="login-card">
+      <h1 class="title">동아리 관리자 로그인</h1>
+      <p class="muted">관리자 비밀번호를 입력해 주세요.</p>
+      <div class="row">
+        <div class="field" style="max-width: 320px;">
+          <label for="password">비밀번호</label>
+          <input type="password" id="password" placeholder="비밀번호 입력">
+        </div>
+        <div>
+          <button type="button" class="primary" id="btn-login">로그인</button>
+        </div>
+      </div>
+      <div id="login-status" class="status"></div>
+    </div>
+
+    <div class="card" id="hub-card" style="display: none;">
+      <h2 class="subtitle">메뉴</h2>
+      <p class="muted">원하는 페이지로 이동하세요.</p>
+      <div class="row">
+        <a class="card" style="flex: 1; min-width: 220px;" href="./attendance.html">출석 관리</a>
+        <a class="card" style="flex: 1; min-width: 220px;" href="./evaluations.html">자기평가 모아보기</a>
+        <a class="card" style="flex: 1; min-width: 220px;" href="./members.html">인원 등록 / 조 관리</a>
+      </div>
+      <div style="margin-top: 8px;">
+        <button type="button" id="btn-logout">로그아웃</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./common.js"></script>
+  <script>
+    const loginCard = document.getElementById("login-card");
+    const hubCard = document.getElementById("hub-card");
+    const statusEl = document.getElementById("login-status");
+
+    function setLoginStatus(message, type) {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type || ""}`.trim();
+    }
+
+    function renderByAuth() {
+      if (window.ClubApp.isAuthenticated()) {
+        loginCard.style.display = "none";
+        hubCard.style.display = "block";
+      } else {
+        loginCard.style.display = "block";
+        hubCard.style.display = "none";
+      }
+    }
+
+    document.getElementById("btn-login").addEventListener("click", () => {
+      const password = document.getElementById("password").value;
+      if (window.ClubApp.loginWithPassword(password)) {
+        setLoginStatus("");
+        renderByAuth();
+      } else {
+        setLoginStatus("비밀번호가 일치하지 않습니다.", "error");
+      }
+    });
+
+    document.getElementById("btn-logout").addEventListener("click", window.ClubApp.logout);
+    renderByAuth();
+  </script>
+</body>
+</html>

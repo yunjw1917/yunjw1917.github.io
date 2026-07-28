@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동아리 관리자 - 출석 관리</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="gnb-root"></div>
+  <div class="container">
+    <div class="card">
+      <h1 class="title">출석 관리</h1>
+      <div class="row">
+        <div class="field" style="max-width: 220px;">
+          <label for="attendance-date">날짜</label>
+          <input type="date" id="attendance-date">
+        </div>
+        <div style="align-self: end;">
+          <button type="button" id="btn-load">불러오기</button>
+        </div>
+      </div>
+      <div id="page-status" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="subtitle">조별 출석 상태</h2>
+      <div id="attendance-wrap"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./common.js"></script>
+  <script>
+    if (!window.ClubApp.requireAuth()) {}
+    window.ClubApp.setupGnb("attendance");
+
+    const dateEl = document.getElementById("attendance-date");
+    const wrap = document.getElementById("attendance-wrap");
+    let members = [];
+    let attendanceMap = {};
+
+    function todayIso() {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function statusLabel(s) {
+      if (s === "late") return "지각";
+      if (s === "absent") return "결석";
+      return "출석";
+    }
+
+    async function loadData() {
+      const date = dateEl.value;
+      if (!date) return;
+      try {
+        const [memberRows, attendanceRows] = await Promise.all([
+          window.ClubApp.getMembers(),
+          window.ClubApp.getAttendanceByDate(date)
+        ]);
+        members = memberRows;
+        attendanceMap = {};
+        attendanceRows.forEach((a) => {
+          attendanceMap[a.member_id] = a.status;
+        });
+        render();
+        window.ClubApp.setStatus("출석 정보를 불러왔습니다.", "ok");
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "출석 정보를 불러오지 못했습니다.", "error");
+      }
+    }
+
+    function render() {
+      const teams = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+      members.forEach((m) => {
+        if (teams[m.team_no]) teams[m.team_no].push(m);
+      });
+      wrap.innerHTML = "";
+
+      for (let team = 1; team <= 5; team += 1) {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<h3 class="subtitle">${team}조</h3>`;
+
+        const table = document.createElement("table");
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>역할</th>
+              <th>현재 상태</th>
+              <th>변경</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+        const tbody = table.querySelector("tbody");
+
+        if (!teams[team].length) {
+          tbody.innerHTML = `<tr><td colspan="4" class="muted">등록된 인원이 없습니다.</td></tr>`;
+        } else {
+          teams[team].forEach((m) => {
+            const tr = document.createElement("tr");
+            const current = attendanceMap[m.id] || "present";
+            tr.innerHTML = `
+              <td><a href="./member-detail.html?id=${m.id}">${m.name}</a></td>
+              <td>${m.role === "leader" ? "조장" : "모둠원"}</td>
+              <td>${statusLabel(current)}</td>
+              <td>
+                <button type="button" data-member="${m.id}" data-status="present">출석</button>
+                <button type="button" data-member="${m.id}" data-status="late">지각</button>
+                <button type="button" data-member="${m.id}" data-status="absent">결석</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+
+        card.appendChild(table);
+        wrap.appendChild(card);
+      }
+
+      wrap.querySelectorAll("button[data-member]").forEach((btn) => {
+        const memberId = Number(btn.dataset.member);
+        const status = btn.dataset.status;
+        if (attendanceMap[memberId] === status) btn.classList.add("active");
+        btn.addEventListener("click", () => updateStatus(memberId, status));
+      });
+    }
+
+    async function updateStatus(memberId, status) {
+      const date = dateEl.value;
+      try {
+        await window.ClubApp.saveAttendance(memberId, date, status);
+        attendanceMap[memberId] = status;
+        render();
+        window.ClubApp.setStatus("출석 상태를 저장했습니다.", "ok");
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "출석 상태 저장 중 오류가 발생했습니다.", "error");
+      }
+    }
+
+    document.getElementById("btn-load").addEventListener("click", loadData);
+    dateEl.value = todayIso();
+    loadData();
+  </script>
+</body>
+</html>

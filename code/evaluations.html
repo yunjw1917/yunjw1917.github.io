@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동아리 관리자 - 자기평가</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="gnb-root"></div>
+  <div class="container">
+    <div class="card">
+      <h1 class="title">매시간 자기평가 작성</h1>
+      <div class="row">
+        <div class="field" style="min-width: 240px;">
+          <label for="eval-member">인원</label>
+          <select id="eval-member"></select>
+        </div>
+        <div class="field" style="max-width: 180px;">
+          <label for="eval-hour">시간(교시/차시)</label>
+          <input type="text" id="eval-hour" placeholder="예: 1교시">
+        </div>
+      </div>
+      <div class="field" style="margin-top: 10px;">
+        <label for="eval-content">자기평가 내용</label>
+        <textarea id="eval-content" placeholder="학습 내용, 느낀 점, 다음 목표 등"></textarea>
+      </div>
+      <div style="margin-top: 10px;">
+        <button type="button" class="primary" id="btn-save-eval">저장</button>
+      </div>
+      <div id="page-status" class="status"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2 class="subtitle">시간순 모아보기</h2>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>작성시각</th>
+                <th>조</th>
+                <th>이름</th>
+                <th>시간</th>
+                <th>내용</th>
+              </tr>
+            </thead>
+            <tbody id="timeline-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="subtitle">조별 모아보기</h2>
+        <div id="team-board"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./common.js"></script>
+  <script>
+    if (!window.ClubApp.requireAuth()) {}
+    window.ClubApp.setupGnb("evaluations");
+
+    const memberEl = document.getElementById("eval-member");
+    const hourEl = document.getElementById("eval-hour");
+    const contentEl = document.getElementById("eval-content");
+    const timelineBody = document.getElementById("timeline-body");
+    const teamBoard = document.getElementById("team-board");
+
+    let members = [];
+    let evaluations = [];
+
+    function memberNameById(id) {
+      const target = members.find((m) => m.id === id);
+      return target ? target.name : "-";
+    }
+
+    async function loadMembers() {
+      members = await window.ClubApp.getMembers();
+      memberEl.innerHTML = members
+        .map((m) => `<option value="${m.id}">${m.team_no}조 - ${m.name} (${m.role === "leader" ? "조장" : "모둠원"})</option>`)
+        .join("");
+    }
+
+    async function loadEvaluations() {
+      evaluations = await window.ClubApp.getEvaluations();
+      renderTimeline();
+      renderTeamBoard();
+    }
+
+    function renderTimeline() {
+      timelineBody.innerHTML = evaluations
+        .map((e) => `
+          <tr>
+            <td>${window.ClubApp.formatDateTime(e.created_at)}</td>
+            <td>${e.team_no}조</td>
+            <td>${e.members && e.members.name ? e.members.name : memberNameById(e.member_id)}</td>
+            <td>${e.hour_slot}</td>
+            <td>${e.content}</td>
+          </tr>
+        `)
+        .join("");
+      if (!evaluations.length) {
+        timelineBody.innerHTML = `<tr><td colspan="5" class="muted">아직 자기평가가 없습니다.</td></tr>`;
+      }
+    }
+
+    function renderTeamBoard() {
+      const grouped = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+      evaluations.forEach((e) => {
+        if (grouped[e.team_no]) grouped[e.team_no].push(e);
+      });
+      teamBoard.innerHTML = "";
+      for (let t = 1; t <= 5; t += 1) {
+        const block = document.createElement("div");
+        block.className = "card";
+        const items = grouped[t]
+          .map((e) => `
+            <div style="border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+              <div><strong>${e.members && e.members.name ? e.members.name : memberNameById(e.member_id)}</strong> / ${e.hour_slot}</div>
+              <div class="muted" style="font-size: 12px;">${window.ClubApp.formatDateTime(e.created_at)}</div>
+              <div style="margin-top: 6px;">${e.content}</div>
+            </div>
+          `)
+          .join("");
+        block.innerHTML = `
+          <h3 class="subtitle">${t}조</h3>
+          ${items || `<div class="muted">기록이 없습니다.</div>`}
+        `;
+        teamBoard.appendChild(block);
+      }
+    }
+
+    document.getElementById("btn-save-eval").addEventListener("click", async () => {
+      const memberId = Number(memberEl.value);
+      const member = members.find((m) => m.id === memberId);
+      const hourSlot = hourEl.value.trim();
+      const content = contentEl.value.trim();
+
+      if (!member) {
+        window.ClubApp.setStatus("인원을 선택해 주세요.", "error");
+        return;
+      }
+      if (!hourSlot || !content) {
+        window.ClubApp.setStatus("시간과 자기평가 내용을 입력해 주세요.", "error");
+        return;
+      }
+
+      try {
+        await window.ClubApp.addEvaluation({
+          member_id: member.id,
+          team_no: member.team_no,
+          hour_slot: hourSlot,
+          content
+        });
+        hourEl.value = "";
+        contentEl.value = "";
+        window.ClubApp.setStatus("자기평가를 저장했습니다.", "ok");
+        await loadEvaluations();
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "자기평가 저장 중 오류가 발생했습니다.", "error");
+      }
+    });
+
+    async function init() {
+      try {
+        await loadMembers();
+        await loadEvaluations();
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "초기 로드 중 오류가 발생했습니다.", "error");
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

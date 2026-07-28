@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동아리 관리자 - 인원 관리</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="gnb-root"></div>
+  <div class="container">
+    <div class="card">
+      <h1 class="title">인원 등록 / 수정 / 삭제</h1>
+      <div class="row">
+        <input type="hidden" id="member-id">
+        <div class="field">
+          <label for="member-name">이름</label>
+          <input type="text" id="member-name" placeholder="이름">
+        </div>
+        <div class="field">
+          <label for="member-team">조</label>
+          <select id="member-team">
+            <option value="1">1조</option>
+            <option value="2">2조</option>
+            <option value="3">3조</option>
+            <option value="4">4조</option>
+            <option value="5">5조</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="member-role">역할</label>
+          <select id="member-role">
+            <option value="leader">조장</option>
+            <option value="member">모둠원</option>
+          </select>
+        </div>
+        <div class="field" style="min-width: 280px;">
+          <label for="member-note">비고</label>
+          <input type="text" id="member-note" placeholder="선택 입력">
+        </div>
+        <div style="align-self: end;">
+          <button type="button" class="primary" id="btn-save-member">저장</button>
+          <button type="button" id="btn-cancel-edit">취소</button>
+        </div>
+      </div>
+      <div id="page-status" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="subtitle">조별 인원 목록</h2>
+      <div id="member-tables"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./common.js"></script>
+  <script>
+    if (!window.ClubApp.requireAuth()) {}
+    window.ClubApp.setupGnb("members");
+
+    const idEl = document.getElementById("member-id");
+    const nameEl = document.getElementById("member-name");
+    const teamEl = document.getElementById("member-team");
+    const roleEl = document.getElementById("member-role");
+    const noteEl = document.getElementById("member-note");
+    const tableWrap = document.getElementById("member-tables");
+
+    let members = [];
+
+    function roleLabel(role) {
+      return role === "leader" ? "조장" : "모둠원";
+    }
+
+    function resetForm() {
+      idEl.value = "";
+      nameEl.value = "";
+      teamEl.value = "1";
+      roleEl.value = "leader";
+      noteEl.value = "";
+    }
+
+    async function loadMembers() {
+      try {
+        members = await window.ClubApp.getMembers();
+        renderTables();
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "인원 목록을 불러오지 못했습니다.", "error");
+      }
+    }
+
+    function renderTables() {
+      const teamMap = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+      members.forEach((m) => {
+        if (teamMap[m.team_no]) teamMap[m.team_no].push(m);
+      });
+
+      tableWrap.innerHTML = "";
+      for (let team = 1; team <= 5; team += 1) {
+        const rows = teamMap[team]
+          .map((m) => `
+            <tr>
+              <td><a href="./member-detail.html?id=${m.id}">${m.name}</a></td>
+              <td>${roleLabel(m.role)}</td>
+              <td>${m.note || "-"}</td>
+              <td>
+                <button type="button" data-edit="${m.id}">수정</button>
+                <button type="button" class="danger" data-delete="${m.id}">삭제</button>
+              </td>
+            </tr>
+          `)
+          .join("");
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <h3 class="subtitle">${team}조</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>역할</th>
+                <th>비고</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || `<tr><td colspan="4" class="muted">등록된 인원이 없습니다.</td></tr>`}
+            </tbody>
+          </table>
+        `;
+        tableWrap.appendChild(card);
+      }
+
+      tableWrap.querySelectorAll("[data-edit]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.dataset.edit);
+          const target = members.find((m) => m.id === id);
+          if (!target) return;
+          idEl.value = String(target.id);
+          nameEl.value = target.name;
+          teamEl.value = String(target.team_no);
+          roleEl.value = target.role;
+          noteEl.value = target.note || "";
+          window.ClubApp.setStatus(`"${target.name}" 인원을 수정 중입니다.`, "ok");
+        });
+      });
+
+      tableWrap.querySelectorAll("[data-delete]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = Number(btn.dataset.delete);
+          const target = members.find((m) => m.id === id);
+          if (!target) return;
+          if (!window.confirm(`${target.name} 인원을 삭제하시겠습니까?`)) return;
+          try {
+            await window.ClubApp.removeMember(id);
+            window.ClubApp.setStatus(`"${target.name}" 인원을 삭제했습니다.`, "ok");
+            await loadMembers();
+          } catch (err) {
+            window.ClubApp.setStatus(err.message || "삭제 중 오류가 발생했습니다.", "error");
+          }
+        });
+      });
+    }
+
+    document.getElementById("btn-save-member").addEventListener("click", async () => {
+      const id = idEl.value ? Number(idEl.value) : null;
+      const name = nameEl.value.trim();
+      const teamNo = Number(teamEl.value);
+      const role = roleEl.value;
+      const note = noteEl.value.trim();
+
+      if (!name) {
+        window.ClubApp.setStatus("이름을 입력해 주세요.", "error");
+        return;
+      }
+
+      const payload = {
+        name,
+        team_no: teamNo,
+        role,
+        note: note || null
+      };
+
+      try {
+        if (id) {
+          await window.ClubApp.updateMember(id, payload);
+          window.ClubApp.setStatus("인원 정보를 수정했습니다.", "ok");
+        } else {
+          await window.ClubApp.addMember(payload);
+          window.ClubApp.setStatus("새 인원을 등록했습니다.", "ok");
+        }
+        resetForm();
+        await loadMembers();
+      } catch (err) {
+        window.ClubApp.setStatus(err.message || "저장 중 오류가 발생했습니다.", "error");
+      }
+    });
+
+    document.getElementById("btn-cancel-edit").addEventListener("click", () => {
+      resetForm();
+      window.ClubApp.setStatus("입력 폼을 초기화했습니다.");
+    });
+
+    resetForm();
+    loadMembers();
+  </script>
+</body>
+</html>
